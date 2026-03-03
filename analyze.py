@@ -16,16 +16,24 @@ headers = {
 }
 
 def get_json(url):
-    try:
-        session = requests.Session()
-        # Disable SSL verification to prevent "CERTIFICATE VERIFY FAILED" on some Linux/Docker environments like Render
-        res = session.get(url, headers=headers, timeout=15, verify=False)
-        # Check HTTP response status and throw if not 200
-        res.raise_for_status()
-        return res.json()
-    except Exception as e:
-        print(f"Error fetching {url}: {e}")
-        return None
+    retries = 3
+    for attempt in range(retries):
+        try:
+            session = requests.Session()
+            # Disable SSL verification to prevent "CERTIFICATE VERIFY FAILED" on some Linux/Docker environments like Render
+            # Increased timeout to 30s and added retry logic to handle transient TWSE network lag
+            res = session.get(url, headers=headers, timeout=30, verify=False)
+            # Check HTTP response status and throw if not 200
+            res.raise_for_status()
+            return res.json()
+        except Exception as e:
+            if attempt < retries - 1:
+                wait_time = (attempt + 1) * 2
+                print(f"Attempt {attempt + 1} failed for {url}: {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"Error fetching {url} after {retries} attempts: {e}")
+                return None
 
 def validate_trading_day(date_str):
     """
