@@ -493,13 +493,6 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ date: targetDate })
                     });
-
-                    if (!res.ok) {
-                        const errorText = await res.text();
-                        console.error('Server error:', errorText);
-                        throw new Error(`伺服器回應錯誤 (${res.status})。可能是因為資料抓取時間過長導致超時，請稍後再重新嘗試。`);
-                    }
-
                     const result = await res.json();
 
                     clearInterval(simInterval);

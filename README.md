@@ -64,22 +64,22 @@ python app.py
 
 ```text
 institutional-tracker/
-├── .github/                # CI/CD 及 Render 部署工作流
-├── docs/                   # 學術與系統技術文獻
-│   └── agent_recover.md    # 系統還原與反 WAF 規範
+├── .github/                # CI/CD 與部署自動化工作流
+├── docs/                   # 學術與系統技術文件
+│   └── agent_recover.md    # 核心規避策略與系統還原規格
 ├── templates/              # 前端 HTML/JS 視覺化層
-├── analyze.py              # 核心量化引擎 (VWAP、平行抓取、回溯邏輯)
-├── app.py                  # Web 伺服器與 API 端點
-├── render.yaml             # Render PaaS 部署配置
-├── requirements.txt        # Python 依賴清單
-├── CITATION.cff            # 學術引用格式規範
-└── LICENSE                 # MIT 開源授權條款
+├── analyze.py              # 核心量化引擎、平行抓取與 VWAP 模型
+├── app.py                  # Web 伺服器、API 端點與路由管理
+├── test_fields.py          # 欄位驗證與單元測試工具
+├── render.yaml             # PaaS 容器化部署設定檔
+├── requirements.txt        # Python 依賴套件清單
+├── CITATION.cff            # 學術引用格式文件
+├── LICENSE                 # MIT 開源授權條款
+└── README.md               # 專案概覽與說明文件
 ```
 
 ## 7. AI 代理與開發須知 (Development Notes for AI Agents)
 對於後續欲修改此儲存庫程式的 AI 代碼代理人 (AI Coding Agents)，必須嚴格遵守 `docs/agent_recover.md` 規格內記載之反向工程模型與系統架構安全邊界，以維持反 WAF 功能及自動排程的邏輯完整性。
 
 ## 8. 結論與授權宣告 (License & Disclaimer)
-本專案基於 **MIT License** 進行授權（詳見 [LICENSE](LICENSE) 檔案）。
-本專案專為促進學術量化研究與程式化的市場數據探索所設計。作者不保證衍生自本系統之任何交易決策的獲利可行性，使用者須自行承擔相關之一切金融操作風險。
-
+本專案為開放原始碼軟體，採用 **MIT License** 授權。本專案宗旨為促進學術量化研究與程式化的市場數據探索。作者不保證衍生自本系統之任何交易決策的獲利可行性，使用者須自行承擔相關之一切金融操作風險。學術引用請參閱 `CITATION.cff`。
