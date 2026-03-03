@@ -5,8 +5,8 @@ services:
     region: frankfurt
     plan: free
     buildCommand: "pip install -r requirements.txt && pip install gunicorn"
-    # 使用 120 秒超時，並限制為 1 個 worker 以節省極度有限的 Render 免費版記憶體
-    startCommand: "gunicorn app:app --timeout 120 --workers 1 --threads 2 -b 0.0.0.0:$PORT"
+    # 使用 240 秒超時，以容納 TWSE 繁忙時的多次重試時間，預防 504 Gateway Timeout
+    startCommand: "gunicorn app:app --timeout 240 --workers 1 --threads 2 -b 0.0.0.0:$PORT"
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0

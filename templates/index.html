@@ -475,14 +475,14 @@
                     if (simProgress < 95) {
                         simProgress += Math.random() * 3 + 1;
                         if (simProgress > 95) simProgress = 95;
-                        
+
                         let msg = "正在抓取資料中...";
                         const p = Math.floor(simProgress);
                         if (p < 30) msg = `📡 爬取連線中... ${p}%`;
                         else if (p < 60) msg = `🧹 資料清洗中... ${p}%`;
                         else if (p < 80) msg = `🧮 資金矩陣運算中... ${p}%`;
                         else msg = `📊 報表建構中... ${p}%`;
-                        
+
                         showLoading(true, p, msg);
                     }
                 }, 400);
@@ -493,6 +493,13 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ date: targetDate })
                     });
+
+                    if (!res.ok) {
+                        const errorText = await res.text();
+                        console.error('Server error:', errorText);
+                        throw new Error(`伺服器回應錯誤 (${res.status})。可能是因為資料抓取時間過長導致超時，請稍後再重新嘗試。`);
+                    }
+
                     const result = await res.json();
 
                     clearInterval(simInterval);

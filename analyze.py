@@ -34,8 +34,8 @@ def get_json(url, referer=None):
             if referer:
                 session.headers.update({'Referer': referer})
                 
-            # Increase timeout to 30s to handle TWSE peak load latency
-            res = session.get(url, timeout=30, verify=False)
+            # Set timeout to 20s. TWSE can be slow, but too long prevents timely retries.
+            res = session.get(url, timeout=20, verify=False)
             res.raise_for_status()
             data = res.json()
             
@@ -73,11 +73,12 @@ def fetch_twse(date="20260223"):
     mi_url = f"https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date={date}&type=ALLBUT0999"
     referer = "https://www.twse.com.tw/"
     
-    # TWSE is sensitive to parallel requests; fetching sequentially for stability
-    t86_data = get_json(t86_url, referer=referer)
-    # Slow down slightly between requests to same host
-    time.sleep(0.5)
-    mi_data = get_json(mi_url, referer=referer)
+    # Restore parallel fetching for speed while keeping dynamic referer
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        f_t86 = executor.submit(get_json, t86_url, referer=referer)
+        f_mi = executor.submit(get_json, mi_url, referer=referer)
+        t86_data = f_t86.result()
+        mi_data = f_mi.result()
 
     
     if not t86_data or 'data' not in t86_data:
