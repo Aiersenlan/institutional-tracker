@@ -33,14 +33,7 @@ $$  VWAP = \frac{\sum (Trade Value_i)}{\sum (Trade Volume_i)} $$
 
 本架構乃針對高可用性與極低資源消耗所設計，確保其能在無伺服器架構或限制性容器環境（如 Render 雲端免費方案）中穩定運算。
 
-*   **目錄結構 (Directory Structure)**:
-    -   `analyze.py`: 核心量化引擎與 VWAP 模型實作。
-    -   `app.py`: Web 伺服器與 API 路由設定。
-    -   `templates/`: 前端視覺化終端 (HTML/JS) 視圖層。
-    -   `docs/`: 存放學術規格與系統設計文件（如 `agent_recover.md`）。
-    -   `CITATION.cff`: 學術文獻引用規範格式。
-    -   `LICENSE`: MIT 開源授權條款。
-*   **資料擷取與清洗 (Data Extraction & Cleaning)**: 底層依賴 `pandas` 與 `requests` 套件。建立連線時可選擇性略過 TLS 驗證以規避部分容器環境的憑證錯誤，同時注入動態切換的 `Referer` 標頭 (Headers) 與自動重試機制，確保能穩定穿透市場端點之 WAF 存取阻擋。
+*   **資料擷取與清洗 (Data Extraction & Cleaning)**: 底層依賴 `pandas` 與 `requests` 套件。建立連線時可選擇性略過 TLS 驗證以規避部分容器環境的憑證錯誤，同時注入深度偽裝的 `User-Agent` 與 `Referer` 標頭 (Headers) 來穿透 TPEx 的 403 Forbidden 存取阻擋。
 *   **運算引擎 (Computational Engine)**: 內建資料濾淨演算法，透過字元長度等特徵動態排除 ETF 及權證標的，確保純粹的普通股成分分析。
 *   **網頁動態伺服器 (Web Server)**: 採用 WSGI 標準的 `Flask` 實例，並以 `gunicorn` 作為中介優化。工作進程與線程受到嚴格控制（Workers=$1$, Threads=$2$）並賦予較長的等待週期（$T=120s$），以此避免在高負載矩陣運算時發生伺服器記憶體溢出 (OOM) 或產生 502 Bad Gateway 錯誤。
 *   **安全防護層 (Security Shell)**: 利用環境變數 (`USE_AUTH` 等) 進行抽離式組態設定，藉由簡易 HTTP 基本認證模式，實現系統的私有化保護與存取控制。
@@ -67,8 +60,26 @@ python app.py
 ```
 啟動後，請將瀏覽器導航至 `http://127.0.0.1:5000` 即可進入多板塊視覺化交易分析終端。
 
-## 6. AI 代理與開發須知 (Development Notes for AI Agents)
-對於後續欲修改此儲存庫程式的 AI 代碼代理人 (AI Coding Agents)，必須嚴格遵守 `agent_recover.md` 規格內記載之反向工程模型與系統架構安全邊界，以維持反 WAF 功能及自動排程的邏輯完整性。
+## 6. 目錄結構 (Repository Structure)
 
-## 7. 結論與授權宣告 (License & Disclaimer)
-本專案為開放原始碼軟體，宗旨為促進學術量化研究與程式化的市場數據探索。作者不保證衍生自本系統之任何交易決策的獲利可行性，使用者須自行承擔相關之一切金融操作風險。
+```text
+institutional-tracker/
+├── .github/                # CI/CD 及 Render 部署工作流
+├── docs/                   # 學術與系統技術文獻
+│   └── agent_recover.md    # 系統還原與反 WAF 規範
+├── templates/              # 前端 HTML/JS 視覺化層
+├── analyze.py              # 核心量化引擎 (VWAP、平行抓取、回溯邏輯)
+├── app.py                  # Web 伺服器與 API 端點
+├── render.yaml             # Render PaaS 部署配置
+├── requirements.txt        # Python 依賴清單
+├── CITATION.cff            # 學術引用格式規範
+└── LICENSE                 # MIT 開源授權條款
+```
+
+## 7. AI 代理與開發須知 (Development Notes for AI Agents)
+對於後續欲修改此儲存庫程式的 AI 代碼代理人 (AI Coding Agents)，必須嚴格遵守 `docs/agent_recover.md` 規格內記載之反向工程模型與系統架構安全邊界，以維持反 WAF 功能及自動排程的邏輯完整性。
+
+## 8. 結論與授權宣告 (License & Disclaimer)
+本專案基於 **MIT License** 進行授權（詳見 [LICENSE](LICENSE) 檔案）。
+本專案專為促進學術量化研究與程式化的市場數據探索所設計。作者不保證衍生自本系統之任何交易決策的獲利可行性，使用者須自行承擔相關之一切金融操作風險。
+
