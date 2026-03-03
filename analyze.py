@@ -3,13 +3,9 @@ import json
 import ssl
 from datetime import datetime, timedelta
 import time
+import gc
 import traceback
 import pandas as pd
-import urllib3
-import concurrent.futures
-
-# Suppress InsecureRequestWarning
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -20,66 +16,55 @@ headers = {
 }
 
 def get_json(url, referer=None):
-    # Prepare session and headers outside retry loop
-    session = requests.Session()
-    session.headers.update(headers)
-    if referer:
-        session.headers.update({'Referer': referer})
+    try:
+        session = requests.Session()
+        req_headers = headers.copy()
+        if referer:
+            req_headers['Referer'] = referer
+        elif 'twse.com.tw' in url:
+            req_headers['Referer'] = 'https://www.twse.com.tw/'
         
-    for attempt in range(3):
-        try:
-            # Create a fresh session for each attempt to avoid sticky bad connections
-            session = requests.Session()
-            session.headers.update(headers)
-            if referer:
-                session.headers.update({'Referer': referer})
-                
-            # Set timeout to 20s. TWSE can be slow, but too long prevents timely retries.
-            res = session.get(url, timeout=20, verify=False)
-            res.raise_for_status()
-            data = res.json()
-            
-            # TWSE Data availability check
-            if 'twse.com.tw' in url and data:
-                stat = data.get('stat')
-                # If stat is not OK, or it's a T86 request and 'data' is missing, then retry
-                if stat != 'OK' or ('fund/T86' in url and 'data' not in data):
-                    if attempt < 2:
-                        time.sleep(2)
-                        continue
-            
-            return data
-        except Exception as e:
-            if attempt < 2:
-                time.sleep(2)
-                continue
-            print(f"Error fetching {url}: {e}")
-            return None
-    return None
+        # Disable SSL verification to prevent "CERTIFICATE VERIFY FAILED" on some Linux/Docker environments like Render
+        res = session.get(url, headers=req_headers, timeout=15, verify=False)
+        # Check HTTP response status and throw if not 200
+        res.raise_for_status()
+        return res.json()
+    except Exception as e:
+        print(f"Error fetching {url}: {e}")
+        return None
 
 def validate_trading_day(date_str):
     """
     使用體積極小的 '市場成交概況' API 來快速預檢當天是否為有效交易日。
     這比直接抓整份法人買賣超 (T86) 輕量得多，適合用來做前置測試。
     """
-    # MI_INDEX type=MS 是市場成交概況，回傳資料極少
-    url = f"https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date={date_str}&type=MS"
-    data = get_json(url, referer="https://www.twse.com.tw/")
+    # 使用新版 RWD API，更穩定
+    url = f"https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={date_str}&type=MS&response=json"
+    data = get_json(url)
     # 如果 data['stat'] 為 'OK'，代表當天有交易紀錄
     return data and data.get('stat') == 'OK'
 
 def fetch_twse(date="20260223"):
-    t86_url = f"https://www.twse.com.tw/fund/T86?response=json&date={date}&selectType=ALL"
-    mi_url = f"https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date={date}&type=ALLBUT0999"
-    referer = "https://www.twse.com.tw/"
+    # 使用新版 RWD 網址
+    t86_url = f"https://www.twse.com.tw/rwd/zh/fund/T86?date={date}&selectType=ALL&response=json"
+    mi_url = f"https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={date}&type=ALLBUT0999&response=json"
     
-    # Restore parallel fetching for speed while keeping dynamic referer
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        f_t86 = executor.submit(get_json, t86_url, referer=referer)
-        f_mi = executor.submit(get_json, mi_url, referer=referer)
-        t86_data = f_t86.result()
-        mi_data = f_mi.result()
-
+    # 改回循序抓取，節省 Render 峰值記憶體
+    t86_data = get_json(t86_url)
+    mi_data = get_json(mi_url)
+    
+    # 備援機制：如果 MI_INDEX 抓不到（或是 CDN 阻擋），嘗試抓當日全市場收盤價備援 (STOCK_DAY_ALL)
+    if not mi_data or mi_data.get('stat') != 'OK':
+        print(f"Warning: TWSE MI_INDEX failed, attempting STOCK_DAY_ALL fallback for {date}")
+        fallback_url = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?response=json"
+        mi_data = get_json(fallback_url)
+        if mi_data and mi_data.get('stat') == 'OK':
+            # 轉換格式以識別為有效 table
+            mi_data['tables'] = [{
+                'title': '每日收盤行情',
+                'fields': ['證券代號', '證券名稱', '成交股數', '成交筆數', '成交金額', '開盤價', '最高價', '最低價', '收盤價', '漲跌價差', '最後揭示買價', '最後揭示買量', '最後揭示賣價', '最後揭示賣量', '本益比'],
+                'data': mi_data.get('data', [])
+            }]
     
     if not t86_data or 'data' not in t86_data:
         print("Failed to get TWSE T86")
@@ -124,6 +109,10 @@ def fetch_twse(date="20260223"):
                     prices[code] = {'close': close_p, 'vwap': vwap}
             except Exception as e:
                 print("Error parsing TWSE MI_INDEX fields:", e)
+    
+    # 釋放巨大的收盤價原始 JSON 資料
+    del mi_data
+    gc.collect()
     
     results = []
     t86_fields = t86_data['fields']
@@ -173,6 +162,10 @@ def fetch_twse(date="20260223"):
             'it_shares': it_shares
         })
         
+    # 釋放法人買賣超原始 JSON 資料
+    del t86_data
+    gc.collect()
+    
     return results
 
 def fetch_tpex(date_roc="115/02/23"):
@@ -180,13 +173,10 @@ def fetch_tpex(date_roc="115/02/23"):
     t86_url = f"https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&se=EW&t=D&d={date_roc}"
     # tpex MI_INDEX equivalent
     mi_url = f"https://www.tpex.org.tw/web/stock/aftertrading/daily_close_quotes/stk_quote_result.php?l=zh-tw&d={date_roc}"
-    referer = "https://www.tpex.org.tw/"
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        f_t86 = executor.submit(get_json, t86_url, referer=referer)
-        f_mi = executor.submit(get_json, mi_url, referer=referer)
-        t86_data = f_t86.result()
-        mi_data = f_mi.result()
+    # 改回循序抓取
+    t86_data = get_json(t86_url)
+    mi_data = get_json(mi_url)
     
     results = []
     if not t86_data or 'tables' not in t86_data or not t86_data['tables']:
@@ -220,6 +210,10 @@ def fetch_tpex(date_roc="115/02/23"):
             pass
             
         prices[code] = {'close': close_p, 'vwap': vwap}
+        
+    # 釋放收盤價 JSON
+    del mi_data
+    gc.collect()
             
     t86_table = t86_data['tables'][0]
     for row in t86_table.get('data', []):
@@ -255,6 +249,10 @@ def fetch_tpex(date_roc="115/02/23"):
             'it_shares': it_shares
         })
         
+    # 釋放法人 JSON
+    del t86_data
+    gc.collect()
+    
     return results
 
 def format_val(val):
@@ -275,12 +273,10 @@ def analyze(target_date_str=None):
     twse_date = target_date_str
     tpex_date = f"{roc_year:03d}/{month}/{day}"
     
-    print(f"Fetching data from TWSE ({twse_date}) and TPEx ({tpex_date}) in parallel...")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        f_twse = executor.submit(fetch_twse, twse_date)
-        f_tpex = executor.submit(fetch_tpex, tpex_date)
-        twse_data = f_twse.result()
-        tpex_data = f_tpex.result()
+    print(f"Fetching data from TWSE ({twse_date}) and TPEx ({tpex_date}) sequentially...")
+    # 改回循序執行，避免同時產生多個龐大的 Data 列表
+    twse_data = fetch_twse(twse_date)
+    tpex_data = fetch_tpex(tpex_date)
     
     all_data = twse_data + tpex_data
     if not all_data:
