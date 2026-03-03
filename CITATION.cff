@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software in your research, please cite it as below."
+authors:
+  - family-names: "Aiersenlan"  # Replace with your actual family name if desired
+    given-names: "Ke"           # Replace with your actual given name if desired
+title: "Institutional Tracker: High-Frequency Quantitative Assessment System for Institutional Fund Flows in Taiwan"
+version: 1.0.0
+date-released: 2026-03-02
+url: "https://github.com/Aiersenlan/institutional-tracker"
+repository-code: "https://github.com/Aiersenlan/institutional-tracker"
+abstract: >-
+  A specialized quantitative visualization system designed to monitor and analyze the net buy/sell activities of institutional investors (Foreign Institutional Investors [FINI] and Investment Trust Companies [ITC]) within the Taiwan Stock Exchange (TWSE) and Taipei Exchange (TPEx). The system utilizes Volume-Weighted Average Price (VWAP) as an estimator for true institutional cash flows and incorporates a parallelized data acquisition architecture.
+keywords:
+  - quantitative finance
+  - algorithmic trading
+  - open source
+  - vwap modeling
+  - taiwan stock exchange
+  - python
+license: MIT

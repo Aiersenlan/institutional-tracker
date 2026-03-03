@@ -5,7 +5,11 @@ from datetime import datetime, timedelta
 import time
 import traceback
 import pandas as pd
+import urllib3
 import concurrent.futures
+
+# Suppress InsecureRequestWarning
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -15,17 +19,43 @@ headers = {
     'Referer': 'https://www.tpex.org.tw/'
 }
 
-def get_json(url):
-    try:
-        session = requests.Session()
-        # Disable SSL verification to prevent "CERTIFICATE VERIFY FAILED" on some Linux/Docker environments like Render
-        res = session.get(url, headers=headers, timeout=15, verify=False)
-        # Check HTTP response status and throw if not 200
-        res.raise_for_status()
-        return res.json()
-    except Exception as e:
-        print(f"Error fetching {url}: {e}")
-        return None
+def get_json(url, referer=None):
+    # Prepare session and headers outside retry loop
+    session = requests.Session()
+    session.headers.update(headers)
+    if referer:
+        session.headers.update({'Referer': referer})
+        
+    for attempt in range(3):
+        try:
+            # Create a fresh session for each attempt to avoid sticky bad connections
+            session = requests.Session()
+            session.headers.update(headers)
+            if referer:
+                session.headers.update({'Referer': referer})
+                
+            # Increase timeout to 30s to handle TWSE peak load latency
+            res = session.get(url, timeout=30, verify=False)
+            res.raise_for_status()
+            data = res.json()
+            
+            # TWSE Data availability check
+            if 'twse.com.tw' in url and data:
+                stat = data.get('stat')
+                # If stat is not OK, or it's a T86 request and 'data' is missing, then retry
+                if stat != 'OK' or ('fund/T86' in url and 'data' not in data):
+                    if attempt < 2:
+                        time.sleep(2)
+                        continue
+            
+            return data
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(2)
+                continue
+            print(f"Error fetching {url}: {e}")
+            return None
+    return None
 
 def validate_trading_day(date_str):
     """
@@ -34,19 +64,21 @@ def validate_trading_day(date_str):
     """
     # MI_INDEX type=MS 是市場成交概況，回傳資料極少
     url = f"https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date={date_str}&type=MS"
-    data = get_json(url)
+    data = get_json(url, referer="https://www.twse.com.tw/")
     # 如果 data['stat'] 為 'OK'，代表當天有交易紀錄
     return data and data.get('stat') == 'OK'
 
 def fetch_twse(date="20260223"):
     t86_url = f"https://www.twse.com.tw/fund/T86?response=json&date={date}&selectType=ALL"
     mi_url = f"https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date={date}&type=ALLBUT0999"
+    referer = "https://www.twse.com.tw/"
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        f_t86 = executor.submit(get_json, t86_url)
-        f_mi = executor.submit(get_json, mi_url)
-        t86_data = f_t86.result()
-        mi_data = f_mi.result()
+    # TWSE is sensitive to parallel requests; fetching sequentially for stability
+    t86_data = get_json(t86_url, referer=referer)
+    # Slow down slightly between requests to same host
+    time.sleep(0.5)
+    mi_data = get_json(mi_url, referer=referer)
+
     
     if not t86_data or 'data' not in t86_data:
         print("Failed to get TWSE T86")
@@ -147,10 +179,11 @@ def fetch_tpex(date_roc="115/02/23"):
     t86_url = f"https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&se=EW&t=D&d={date_roc}"
     # tpex MI_INDEX equivalent
     mi_url = f"https://www.tpex.org.tw/web/stock/aftertrading/daily_close_quotes/stk_quote_result.php?l=zh-tw&d={date_roc}"
+    referer = "https://www.tpex.org.tw/"
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        f_t86 = executor.submit(get_json, t86_url)
-        f_mi = executor.submit(get_json, mi_url)
+        f_t86 = executor.submit(get_json, t86_url, referer=referer)
+        f_mi = executor.submit(get_json, mi_url, referer=referer)
         t86_data = f_t86.result()
         mi_data = f_mi.result()
     

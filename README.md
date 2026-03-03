@@ -33,7 +33,14 @@ $$  VWAP = \frac{\sum (Trade Value_i)}{\sum (Trade Volume_i)} $$
 
 本架構乃針對高可用性與極低資源消耗所設計，確保其能在無伺服器架構或限制性容器環境（如 Render 雲端免費方案）中穩定運算。
 
-*   **資料擷取與清洗 (Data Extraction & Cleaning)**: 底層依賴 `pandas` 與 `requests` 套件。建立連線時可選擇性略過 TLS 驗證以規避部分容器環境的憑證錯誤，同時注入深度偽裝的 `User-Agent` 與 `Referer` 標頭 (Headers) 來穿透 TPEx 的 403 Forbidden 存取阻擋。
+*   **目錄結構 (Directory Structure)**:
+    -   `analyze.py`: 核心量化引擎與 VWAP 模型實作。
+    -   `app.py`: Web 伺服器與 API 路由設定。
+    -   `templates/`: 前端視覺化終端 (HTML/JS) 視圖層。
+    -   `docs/`: 存放學術規格與系統設計文件（如 `agent_recover.md`）。
+    -   `CITATION.cff`: 學術文獻引用規範格式。
+    -   `LICENSE`: MIT 開源授權條款。
+*   **資料擷取與清洗 (Data Extraction & Cleaning)**: 底層依賴 `pandas` 與 `requests` 套件。建立連線時可選擇性略過 TLS 驗證以規避部分容器環境的憑證錯誤，同時注入動態切換的 `Referer` 標頭 (Headers) 與自動重試機制，確保能穩定穿透市場端點之 WAF 存取阻擋。
 *   **運算引擎 (Computational Engine)**: 內建資料濾淨演算法，透過字元長度等特徵動態排除 ETF 及權證標的，確保純粹的普通股成分分析。
 *   **網頁動態伺服器 (Web Server)**: 採用 WSGI 標準的 `Flask` 實例，並以 `gunicorn` 作為中介優化。工作進程與線程受到嚴格控制（Workers=$1$, Threads=$2$）並賦予較長的等待週期（$T=120s$），以此避免在高負載矩陣運算時發生伺服器記憶體溢出 (OOM) 或產生 502 Bad Gateway 錯誤。
 *   **安全防護層 (Security Shell)**: 利用環境變數 (`USE_AUTH` 等) 進行抽離式組態設定，藉由簡易 HTTP 基本認證模式，實現系統的私有化保護與存取控制。
