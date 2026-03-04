@@ -668,17 +668,19 @@
             // 1. Extract valid blocks for sorting
             let fb_list = []; let fs_list = []; let ib_list = []; let is_list = [];
             sheetData.data.forEach(row => {
-                if (row[0] !== '') fb_list.push(row.slice(0, 6));
-                if (row[7] !== '') fs_list.push(row.slice(7, 13));
-                if (row[14] !== '') ib_list.push(row.slice(14, 20));
-                if (row[21] !== '') is_list.push(row.slice(21, 27));
+                // Each block now has 7 data columns. Total cols in row: 31 (7*4 data + 3 spacers)
+                // Spacers are at indices 7, 15, 23.
+                if (row[0] !== '') fb_list.push(row.slice(0, 7));
+                if (row[8] !== '') fs_list.push(row.slice(8, 15));
+                if (row[16] !== '') ib_list.push(row.slice(16, 23));
+                if (row[24] !== '') is_list.push(row.slice(24, 31));
             });
 
             // 2. Sorting function
             const sortFn = (a, b) => {
-                // val is index 5, shares is index 4
-                const a_val = Number(a[sortMode === 'val' ? 5 : 4]) || 0;
-                const b_val = Number(b[sortMode === 'val' ? 5 : 4]) || 0;
+                // val is index 6, lots is index 5
+                const a_val = Number(a[sortMode === 'val' ? 6 : 5]) || 0;
+                const b_val = Number(b[sortMode === 'val' ? 6 : 5]) || 0;
                 return Math.abs(b_val) - Math.abs(a_val);
             };
 
@@ -697,18 +699,18 @@
 
             // 4. Build a map restricted to only visible stock rows to determine colors
             const stockDataMap = new Map();
-            const trackStock = (code, shares, isForeign) => {
+            const trackStock = (code, lots, isForeign) => {
                 if (!code || code === '') return;
                 const key = String(code);
                 const ex = stockDataMap.get(key) || {};
-                if (isForeign) ex.f_val = Number(shares);
-                else ex.i_val = Number(shares);
+                if (isForeign) ex.f_val = Number(lots);
+                else ex.i_val = Number(lots);
                 stockDataMap.set(key, ex);
             };
-            fb_list.forEach(r => trackStock(r[0], r[4], true));
-            fs_list.forEach(r => trackStock(r[0], r[4], true));
-            ib_list.forEach(r => trackStock(r[0], r[4], false));
-            is_list.forEach(r => trackStock(r[0], r[4], false));
+            fb_list.forEach(r => trackStock(r[0], r[5], true));
+            fs_list.forEach(r => trackStock(r[0], r[5], true));
+            ib_list.forEach(r => trackStock(r[0], r[5], false));
+            is_list.forEach(r => trackStock(r[0], r[5], false));
 
             // Determine state colors
             function getFillClass(code, isForeignInfo) {
@@ -746,11 +748,11 @@
             // Reconstruct sorted rows
             const sortedRows = [];
             for (let i = 0; i < maxRows; i++) {
-                const newRow = new Array(27).fill('');
+                const newRow = new Array(31).fill('');
                 if (i < fb_list.length) fb_list[i].forEach((v, idx) => newRow[idx] = v);
-                if (i < fs_list.length) fs_list[i].forEach((v, idx) => newRow[idx + 7] = v);
-                if (i < ib_list.length) ib_list[i].forEach((v, idx) => newRow[idx + 14] = v);
-                if (i < is_list.length) is_list[i].forEach((v, idx) => newRow[idx + 21] = v);
+                if (i < fs_list.length) fs_list[i].forEach((v, idx) => newRow[idx + 8] = v);
+                if (i < ib_list.length) ib_list[i].forEach((v, idx) => newRow[idx + 16] = v);
+                if (i < is_list.length) is_list[i].forEach((v, idx) => newRow[idx + 24] = v);
                 sortedRows.push(newRow);
             }
 
@@ -758,23 +760,23 @@
 
             // Main Headers
             html += '<thead><tr>';
-            html += `<th colspan="7" class="fs-5 shadow-sm th-buy main-th">外資買超</th><th class="border-0 bg-transparent"></th>`;
-            html += `<th colspan="7" class="fs-5 shadow-sm th-sell main-th">外資賣超</th><th class="border-0 bg-transparent"></th>`;
-            html += `<th colspan="7" class="fs-5 shadow-sm th-buy main-th">投信買超</th><th class="border-0 bg-transparent"></th>`;
-            html += `<th colspan="7" class="fs-5 shadow-sm th-sell main-th">投信賣超</th>`;
+            html += `<th colspan="8" class="fs-5 shadow-sm th-buy main-th">外資買超</th><th class="border-0 bg-transparent"></th>`;
+            html += `<th colspan="8" class="fs-5 shadow-sm th-sell main-th">外資賣超</th><th class="border-0 bg-transparent"></th>`;
+            html += `<th colspan="8" class="fs-5 shadow-sm th-buy main-th">投信買超</th><th class="border-0 bg-transparent"></th>`;
+            html += `<th colspan="8" class="fs-5 shadow-sm th-sell main-th">投信賣超</th>`;
             html += '</tr><tr class="sub-header">';
 
             // Sub Headers
-            const sub = sheetData.sub_headers;
             for (let i = 0; i < 4; i++) {
                 html += `
-                    <th>排名</th>
-                    <th>${sub[0]}</th>
-                    <th>${sub[1]}</th>
-                    <th class="col-extra">${sub[2]}</th>
-                    <th class="col-extra">${sub[3]}</th>
-                    <th class="col-extra">${sub[4]}</th>
-                    <th class="col-extra">${sub[5]}</th>
+                    <th style="min-width:35px;">排名</th>
+                    <th style="min-width:55px;">代號</th>
+                    <th style="min-width:90px;">名稱</th>
+                    <th style="min-width:65px;">收盤價</th>
+                    <th style="min-width:65px;">收盤%</th>
+                    <th style="min-width:65px;" class="col-extra">均價</th>
+                    <th style="min-width:60px;" class="col-extra">張數</th>
+                    <th style="min-width:85px;" class="col-extra">估價(M)</th>
                 `;
                 if (i < 3) html += '<th class="border-0 bg-transparent px-1"></th>';
             }
@@ -790,38 +792,49 @@
                     const code = row[startIndex];
                     const name = row[startIndex + 1];
                     const price = row[startIndex + 2];
-                    const vwap = row[startIndex + 3];
-                    const shares = row[startIndex + 4];
-                    const val = row[startIndex + 5];
+                    const change_pct = row[startIndex + 3];
+                    const vwap = row[startIndex + 4];
+                    const lots = row[startIndex + 5];
+                    const val = row[startIndex + 6];
 
                     if (code === '') {
-                        return `<td></td><td></td><td></td><td class="col-extra"></td><td class="col-extra"></td><td class="col-extra"></td><td class="col-extra"></td>`;
+                        return `<td></td><td></td><td></td><td></td><td></td><td class="col-extra"></td><td class="col-extra"></td><td class="col-extra"></td>`;
                     }
 
                     const fillClass = getFillClass(code, isForeign);
+
+                    // Determine change_pct style
+                    let changeClass = '';
+                    if (typeof change_pct === 'number') {
+                        if (change_pct >= 9.5) changeClass = 'bg-danger text-white fw-bold';
+                        else if (change_pct <= -9.5) changeClass = 'bg-success text-white fw-bold';
+                        else if (change_pct > 0) changeClass = 'text-danger fw-bold';
+                        else if (change_pct < 0) changeClass = 'text-success fw-bold';
+                    }
 
                     return `
                         <td class="text-center text-secondary font-monospace fw-bold">${rank}</td>
                         <td class="text-center font-monospace">${code}</td>
                         <td class="text-center fw-bold stock-clickable ${fillClass}" data-code="${code}" onclick="scrollToStock('${code}', this)" onmouseover="highlightStock('${code}')" onmouseout="removeHighlightStock('${code}')" title="點擊跳轉到另一個買賣超區域">${name}</td>
-                        <td class="stock-data-${code} col-extra">${formatNumber(price, 2)}</td>
-                        <td class="stock-data-${code} col-extra">${formatNumber(vwap, 2)}</td>
-                        <td class="stock-data-${code} col-extra">${formatNumber(shares, 0)}</td>
+                        <td class="stock-data-${code} font-monospace">${formatNumber(price, 2)}</td>
+                        <td class="stock-data-${code} text-center ${changeClass}">${formatNumber(change_pct, 2)}%</td>
+                        <td class="stock-data-${code} col-extra text-muted small">${formatNumber(vwap, 1)}</td>
+                        <td class="stock-data-${code} col-extra font-monospace">${formatNumber(lots)}</td>
                         <td class="fw-bold stock-data-${code} col-extra">${formatNumber(val, 2)}</td>
                     `;
                 };
 
-                // Foreign Buy (0-5)
+                // Foreign Buy (0-6)
                 html += buildBlock(0, true);
                 html += '<td class="border-0"></td>';
-                // Foreign Sell (7-12)
-                html += buildBlock(7, true);
+                // Foreign Sell (8-14)
+                html += buildBlock(8, true);
                 html += '<td class="border-0"></td>';
-                // IT Buy (14-19)
-                html += buildBlock(14, false);
+                // IT Buy (16-22)
+                html += buildBlock(16, false);
                 html += '<td class="border-0"></td>';
-                // IT Sell (21-26)
-                html += buildBlock(21, false);
+                // IT Sell (24-30)
+                html += buildBlock(24, false);
 
                 html += '</tr>';
             });
@@ -892,7 +905,7 @@
 
             // Sync colspans on main headers to prevent column bleeding/layout jumping
             document.querySelectorAll('.main-th').forEach(th => {
-                th.setAttribute('colspan', isCompact ? '3' : '7');
+                th.setAttribute('colspan', isCompact ? '3' : '8');
             });
         }
 

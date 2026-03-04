@@ -77,18 +77,39 @@ def fetch_twse(date="20260223"):
                 idx_mi_close = mi_fields.index('收盤價')
                 idx_mi_vol = mi_fields.index('成交股數')
                 idx_mi_val = mi_fields.index('成交金額')
+                # Add indices for change calculation
+                idx_mi_sign = mi_fields.index('漲跌(+/-)')
+                idx_mi_diff = mi_fields.index('漲跌價差')
                 
                 for row in target_table['data']:
                     code = row[idx_mi_code].strip()
                     price_str = row[idx_mi_close].replace(',', '')
                     vol_str = row[idx_mi_vol].replace(',', '')
                     val_str = row[idx_mi_val].replace(',', '')
+                    sign_html = row[idx_mi_sign] # contains <p style="color:red">+</p> or similar
+                    diff_str = row[idx_mi_diff].replace(',', '')
                     
                     try:
                         close_p = float(price_str)
                     except ValueError:
                         close_p = 0.0
                         
+                    # Calculate change percentage
+                    change_pct = 0.0
+                    try:
+                        diff = float(diff_str)
+                        # Extract sign from HTML-like string
+                        if '+' in sign_html or 'red' in sign_html:
+                            pass # diff is positive
+                        elif '-' in sign_html or 'green' in sign_html:
+                            diff = -diff
+                        
+                        prev_close = close_p - diff
+                        if prev_close > 0:
+                            change_pct = (diff / prev_close) * 100
+                    except:
+                        pass
+
                     vwap = close_p
                     if vol_str.isdigit() and val_str.isdigit():
                         vol = int(vol_str)
@@ -96,7 +117,11 @@ def fetch_twse(date="20260223"):
                         if vol > 0:
                             vwap = val / vol
                     
-                    prices[code] = {'close': close_p, 'vwap': vwap}
+                    prices[code] = {
+                        'close': close_p, 
+                        'vwap': round(vwap, 1), 
+                        'change_pct': round(change_pct, 2)
+                    }
             except Exception as e:
                 print("Error parsing TWSE MI_INDEX fields:", e)
     
@@ -115,6 +140,7 @@ def fetch_twse(date="20260223"):
     except StopIteration:
         idx_it = next(i for i, f in enumerate(t86_fields) if '投信' in f and '買賣超' in f)
 
+    import math
     for row in t86_data['data']:
         code = row[idx_code].strip()
         name = row[idx_name].strip()
@@ -141,11 +167,14 @@ def fetch_twse(date="20260223"):
             'code': code,
             'name': name,
             'price': prices[code]['close'],
+            'change_pct': prices[code]['change_pct'],
             'vwap': prices[code]['vwap'],
             'foreign_val': foreign_value,
             'it_val': it_value,
             'foreign_shares': foreign_shares,
-            'it_shares': it_shares
+            'it_shares': it_shares,
+            'foreign_lots': math.ceil(foreign_shares / 1000.0),
+            'it_lots': math.ceil(it_shares / 1000.0)
         })
         
     return results
@@ -176,13 +205,26 @@ def fetch_tpex(date_roc="115/02/23"):
     for row in mi_table.get('data', []):
         code = row[0].strip()
         price_str = row[2].replace(',', '') # idx 2 is '收盤'
+        diff_str = str(row[3]).replace(',', '').replace(' ', '') # idx 3 is '漲跌'
+        
         try:
             close_p = float(price_str)
         except ValueError:
             close_p = 0.0
             
+        # Calculate change percentage
+        change_pct = 0.0
+        try:
+            diff = float(diff_str)
+            prev_close = close_p - diff
+            if prev_close > 0:
+                change_pct = (diff / prev_close) * 100
+        except:
+            pass
+            
         vwap = close_p
         try:
+            # TPEX MI_INDEX: idx 8 is volume (股), idx 9 is value (元), idx 7 is vwap (if exists)
             if len(row) > 9:
                 vol_str = str(row[8]).replace(',', '')
                 val_str = str(row[9]).replace(',', '')
@@ -193,9 +235,14 @@ def fetch_tpex(date_roc="115/02/23"):
         except Exception:
             pass
             
-        prices[code] = {'close': close_p, 'vwap': vwap}
+        prices[code] = {
+            'close': close_p, 
+            'vwap': round(vwap, 1), 
+            'change_pct': round(change_pct, 2)
+        }
             
     t86_table = t86_data['tables'][0]
+    import math
     for row in t86_table.get('data', []):
         # TPEX format: 0=代號, 1=名稱
         # 4=外資買賣超, 7=外資自營買賣超, 10=外資合計, 13=投信買賣超
@@ -222,11 +269,14 @@ def fetch_tpex(date_roc="115/02/23"):
             'code': code,
             'name': name,
             'price': prices[code]['close'],
+            'change_pct': prices[code]['change_pct'],
             'vwap': prices[code]['vwap'],
             'foreign_val': foreign_value,
             'it_val': it_value,
             'foreign_shares': foreign_shares,
-            'it_shares': it_shares
+            'it_shares': it_shares,
+            'foreign_lots': math.ceil(foreign_shares / 1000.0),
+            'it_lots': math.ceil(it_shares / 1000.0)
         })
         
     return results
@@ -354,6 +404,12 @@ def analyze(target_date_str=None):
         # 建立格式與字體
         report_date = f"{year}/{month}/{day}"
         
+        # 漲跌停顏色 (Limit Up/Down)
+        limit_up_fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
+        limit_up_font = Font(name='微軟正黑體', size=11, bold=True, color="FFFFFF")
+        limit_down_fill = PatternFill(start_color="00AA00", end_color="00AA00", fill_type="solid")
+        limit_down_font = Font(name='微軟正黑體', size=11, bold=True, color="FFFFFF")
+        
         light_red_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
         dark_red_fill = PatternFill(start_color="FF8080", end_color="FF8080", fill_type="solid")
         light_green_fill = PatternFill(start_color="E6FFE6", end_color="E6FFE6", fill_type="solid")
@@ -365,6 +421,10 @@ def analyze(target_date_str=None):
         sub_header_fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
         sub_header_font = Font(name='微軟正黑體', size=11, bold=True)
         base_font = Font(name='微軟正黑體', size=11)
+        
+        # 漲紅跌綠字體
+        red_text_font = Font(name='微軟正黑體', size=11, color="FF0000")
+        green_text_font = Font(name='微軟正黑體', size=11, color="008800")
         
         center_align = Alignment(horizontal='center', vertical='center')
         left_align = Alignment(horizontal='left', vertical='center')
@@ -389,29 +449,29 @@ def analyze(target_date_str=None):
             
             max_rows = max(len(fb), len(fs), len(ib), len(isell))
             
-            # 第二列: 大標題
+            # 第二列: 大標題 (每區塊 7 欄 + 1 欄位間隔)
             row2 = [
-                "外資買超", "", "", "", "", "", "",
-                "外資賣超", "", "", "", "", "", "",
-                "投信買超", "", "", "", "", "", "",
-                "投信賣超", "", "", "", "", ""
+                "外資買超", "", "", "", "", "", "", "",
+                "外資賣超", "", "", "", "", "", "", "",
+                "投信買超", "", "", "", "", "", "", "",
+                "投信賣超", "", "", "", "", "", ""
             ]
             ws.append(row2)
             
             # 第三列: 子標題
             sub_headers = [
-                "證券代號", "證券名稱", "收盤價", "均價", "股數", "估價(百萬)", "",
-                "證券代號", "證券名稱", "收盤價", "均價", "股數", "估價(百萬)", "",
-                "證券代號", "證券名稱", "收盤價", "均價", "股數", "估價(百萬)", "",
-                "證券代號", "證券名稱", "收盤價", "均價", "股數", "估價(百萬)"
+                "代號", "名稱", "收盤價", "收盤%", "均價", "張數", "估價(百萬)", "",
+                "代號", "名稱", "收盤價", "收盤%", "均價", "張數", "估價(百萬)", "",
+                "代號", "名稱", "收盤價", "收盤%", "均價", "張數", "估價(百萬)", "",
+                "代號", "名稱", "收盤價", "收盤%", "均價", "張數", "估價(百萬)"
             ]
             ws.append(sub_headers)
             
             # 合併第二列儲存格
-            ws.merge_cells("A2:F2")
-            ws.merge_cells("H2:M2")
-            ws.merge_cells("O2:T2")
-            ws.merge_cells("V2:AA2")
+            ws.merge_cells("A2:G2")
+            ws.merge_cells("I2:O2")
+            ws.merge_cells("Q2:W2")
+            ws.merge_cells("Y2:AE2")
             
             # 設定前三列樣式
             for cell in ws[2]:
@@ -428,14 +488,14 @@ def analyze(target_date_str=None):
             # 計算每檔股票的狀態 (同向或反向)
             stock_state = {}
             for d in market_data:
-                f_val, i_val = d['foreign_shares'], d['it_shares']
-                if (f_val > 0 and i_val > 0) or (f_val < 0 and i_val < 0):
-                    if abs(f_val) > abs(i_val):
+                f_shares, i_shares = d['foreign_shares'], d['it_shares']
+                if (f_shares > 0 and i_shares > 0) or (f_shares < 0 and i_shares < 0):
+                    if abs(f_shares) > abs(i_shares):
                         stock_state[d['code']] = (dark_red_fill, light_red_fill)
                     else:
                         stock_state[d['code']] = (light_red_fill, dark_red_fill)
-                elif (f_val > 0 and i_val < 0) or (f_val < 0 and i_val > 0):
-                    if abs(f_val) > abs(i_val):
+                elif (f_shares > 0 and i_shares < 0) or (f_shares < 0 and i_shares > 0):
+                    if abs(f_shares) > abs(i_shares):
                         stock_state[d['code']] = (dark_green_fill, light_green_fill)
                     else:
                         stock_state[d['code']] = (light_green_fill, dark_green_fill)
@@ -443,14 +503,14 @@ def analyze(target_date_str=None):
                     stock_state[d['code']] = (None, None)
 
             # 輔助函式：取得股票資料與對應的顏色
-            def get_stock_data(lst, idx, val_key, shares_key, is_foreign):
+            def get_stock_data(lst, idx, val_key, lots_key, is_foreign):
                 if idx < len(lst):
                     st = lst[idx]
                     fills = stock_state.get(st['code'], (None, None))
                     fill = fills[0] if is_foreign else fills[1]
                     code_val = int(st['code']) if st['code'].isdigit() else st['code']
-                    return [code_val, st['name'], st['price'], st['vwap'], st[shares_key], st[val_key] / 1000000], fill
-                return ["", "", "", "", "", ""], None
+                    return [code_val, st['name'], st['price'], st['change_pct'], st['vwap'], st[lots_key], st[val_key] / 1000000], fill
+                return ["", "", "", "", "", "", ""], None
 
             # 寫入各分類的排名資料
             for row_i in range(max_rows):
@@ -462,10 +522,10 @@ def analyze(target_date_str=None):
                 row_idx = row_i + 4 # 標題佔 3 列
                 
                 col_settings = [
-                    (1, fb_data[0], None, None), (2, fb_data[1], fb_fill, None), (3, fb_data[2], None, '#,##0.00'), (4, fb_data[3], None, '#,##0.00'), (5, fb_data[4], None, '#,##0'), (6, fb_data[5], None, '#,##0.00'),
-                    (8, fs_data[0], None, None), (9, fs_data[1], fs_fill, None), (10, fs_data[2], None, '#,##0.00'), (11, fs_data[3], None, '#,##0.00'), (12, fs_data[4], None, '#,##0'), (13, fs_data[5], None, '#,##0.00'),
-                    (15, ib_data[0], None, None), (16, ib_data[1], ib_fill, None), (17, ib_data[2], None, '#,##0.00'), (18, ib_data[3], None, '#,##0.00'), (19, ib_data[4], None, '#,##0'), (20, ib_data[5], None, '#,##0.00'),
-                    (22, is_data[0], None, None), (23, is_data[1], is_fill, None), (24, is_data[2], None, '#,##0.00'), (25, is_data[3], None, '#,##0.00'), (26, is_data[4], None, '#,##0'), (27, is_data[5], None, '#,##0.00')
+                    (1, fb_data[0], None, None), (2, fb_data[1], fb_fill, None), (3, fb_data[2], None, '#,##0.00'), (4, fb_data[3], None, '0.00"%"'), (5, fb_data[4], None, '#,##0.0'), (6, fb_data[5], None, '#,##0'), (7, fb_data[6], None, '#,##0.00'),
+                    (9, fs_data[0], None, None), (10, fs_data[1], fs_fill, None), (11, fs_data[2], None, '#,##0.00'), (12, fs_data[3], None, '0.00"%"'), (13, fs_data[4], None, '#,##0.0'), (14, fs_data[5], None, '#,##0'), (15, fs_data[6], None, '#,##0.00'),
+                    (17, ib_data[0], None, None), (18, ib_data[1], ib_fill, None), (19, ib_data[2], None, '#,##0.00'), (20, ib_data[3], None, '0.00"%"'), (21, ib_data[4], None, '#,##0.0'), (22, ib_data[5], None, '#,##0'), (23, ib_data[6], None, '#,##0.00'),
+                    (25, is_data[0], None, None), (26, is_data[1], is_fill, None), (27, is_data[2], None, '#,##0.00'), (28, is_data[3], None, '0.00"%"'), (29, is_data[4], None, '#,##0.0'), (30, is_data[5], None, '#,##0'), (31, is_data[6], None, '#,##0.00')
                 ]
                 
                 for col, val, fill, num_fmt in col_settings:
@@ -473,26 +533,44 @@ def analyze(target_date_str=None):
                         cell = ws.cell(row=row_idx, column=col, value=val)
                         cell.font = base_font
                         cell.alignment = right_align if isinstance(val, (int, float)) else center_align
-                        if fill and col in [2, 9, 16, 23]: # Only highlight the Name column
+                        
+                        # 名稱顏色
+                        if fill and col in [2, 10, 18, 26]:
                             cell.fill = fill
+                            
+                        # 漲跌百分比顏色與漲跌停標示
+                        if col in [4, 12, 20, 28] and isinstance(val, (int, float)):
+                            if val >= 9.5:
+                                cell.fill = limit_up_fill
+                                cell.font = limit_up_font
+                            elif val <= -9.5:
+                                cell.fill = limit_down_fill
+                                cell.font = limit_down_font
+                            elif val > 0:
+                                cell.font = red_text_font
+                            elif val < 0:
+                                cell.font = green_text_font
+                        
                         if num_fmt and isinstance(val, (int, float)):
                             cell.number_format = num_fmt
 
             # 調整欄位寬度
-            for c in ['A', 'H', 'O', 'V']:
-                ws.column_dimensions[c].width = 10
-            for c in ['B', 'I', 'P', 'W']:
+            for c in ['A', 'I', 'Q', 'Y']: # 代號
+                ws.column_dimensions[c].width = 8
+            for c in ['B', 'J', 'R', 'Z']: # 名稱
                 ws.column_dimensions[c].width = 12
-            for c in ['C', 'J', 'Q', 'X']:
+            for c in ['C', 'K', 'S', 'AA']: # 收盤價
+                ws.column_dimensions[c].width = 9
+            for c in ['D', 'L', 'T', 'AB']: # 收盤%
+                ws.column_dimensions[c].width = 8
+            for c in ['E', 'M', 'U', 'AC']: # 均價
                 ws.column_dimensions[c].width = 10
-            for c in ['D', 'K', 'R', 'Y']:
-                ws.column_dimensions[c].width = 11
-            for c in ['E', 'L', 'S', 'Z']:
-                ws.column_dimensions[c].width = 16
-            for c in ['F', 'M', 'T', 'AA']:
-                ws.column_dimensions[c].width = 13
-            for c in ['G', 'N', 'U']:
-                ws.column_dimensions[c].width = 3
+            for c in ['F', 'N', 'V', 'AD']: # 張數
+                ws.column_dimensions[c].width = 10
+            for c in ['G', 'O', 'W', 'AE']: # 估價
+                ws.column_dimensions[c].width = 12
+            for c in ['H', 'P', 'X']: # 間隔
+                ws.column_dimensions[c].width = 2
 
         filename = f"market_analysis_{target_date_str}.xlsx"
         wb.save(filename)
