@@ -1,4 +1,12 @@
 import os
+import sys
+import io
+
+# Force UTF-8 encoding for stdout/stderr to fix Chinese character corruption in Windows console
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 from flask import Flask, render_template, request, jsonify, send_file, Response
 import pandas as pd
 
@@ -45,21 +53,36 @@ def index():
 
 @app.route('/get_available_dates')
 def get_available_dates():
-    # Scan current directory for files matching market_analysis_YYYYMMDD.xlsx
-    dates = []
+    daily_dates = []
+    weekly_dates = []
     for filename in os.listdir('.'):
-        if filename.startswith('market_analysis_') and filename.endswith('.xlsx'):
+        if not filename.endswith('.xlsx'):
+            continue
+        if filename.startswith('market_analysis_week_'):
+            date_str = filename.replace('market_analysis_week_', '').replace('.xlsx', '')
+            weekly_dates.append(date_str)
+        elif filename.startswith('market_analysis_'):
             date_str = filename.replace('market_analysis_', '').replace('.xlsx', '')
             if len(date_str) == 8:
-                dates.append(date_str)
-    dates.sort(reverse=True)
-    return jsonify({'dates': dates})
+                daily_dates.append(date_str)
+    
+    daily_dates.sort(reverse=True)
+    weekly_dates.sort(reverse=True)
+    return jsonify({
+        'daily': daily_dates,
+        'weekly': weekly_dates
+    })
 
 @app.route('/get_report/<date_str>')
 def get_report(date_str):
-    filename = f'market_analysis_{date_str}.xlsx'
+    period = request.args.get('period', 'day')
+    if period == 'week':
+        filename = f'market_analysis_week_{date_str}.xlsx'
+    else:
+        filename = f'market_analysis_{date_str}.xlsx'
+        
     if not os.path.exists(filename):
-        return jsonify({'error': 'Report not found'}), 404
+        return jsonify({'error': f'Report not found ({filename})'}), 404
     
     try:
         # Read all sheets
@@ -102,7 +125,11 @@ def get_report(date_str):
 
 @app.route('/download/<date_str>')
 def download(date_str):
-    filename = f'market_analysis_{date_str}.xlsx'
+    period = request.args.get('period', 'day')
+    if period == 'week':
+        filename = f'market_analysis_week_{date_str}.xlsx'
+    else:
+        filename = f'market_analysis_{date_str}.xlsx'
     if os.path.exists(filename):
         return send_file(filename, as_attachment=True)
     return 'File not found', 404
@@ -114,17 +141,22 @@ def trigger_analysis():
         import subprocess
         
         target_date = None
+        period = 'day'
         if request.is_json:
             data = request.json or {}
             target_date = data.get('date') # e.g. YYYY-MM-DD
+            period = data.get('period', 'day')
             
         cmd = ["python", "analyze.py"]
         if target_date:
             target_date_str = target_date.replace("-", "")
             cmd.append(target_date_str)
-            print(f"Manual trigger activated for date {target_date_str}...")
+            print(f"Manual trigger activated for date {target_date_str} ({period})...")
         else:
-            print("Manual trigger activated for today...")
+            print(f"Manual trigger activated for today ({period})...")
+            
+        if period == 'week':
+            cmd.extend(["--period", "week"])
             
         process = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
         

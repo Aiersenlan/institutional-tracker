@@ -226,8 +226,8 @@
         }
 
         /* Compact Mode System */
-        body.compact-mode .col-extra {
-            display: none;
+        .compact-mode .col-extra {
+            display: none !important;
         }
 
         body.compact-mode .main-th {
@@ -245,6 +245,14 @@
 
             <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-end gap-3 w-100">
                 <div class="d-flex flex-wrap align-items-center justify-content-center gap-2">
+                    <div class="d-flex align-items-center">
+                        <label for="periodSelect" class="form-label mb-0 fw-bold me-2 text-nowrap">週期：</label>
+                        <select id="periodSelect"
+                            class="form-select w-auto text-center fw-bold shadow-sm border-danger">
+                            <option value="day">日報</option>
+                            <option value="week">週報</option>
+                        </select>
+                    </div>
                     <div class="d-flex align-items-center">
                         <label for="dateSelect" class="form-label mb-0 fw-bold me-2 text-nowrap">選擇日期：</label>
                         <select id="dateSelect" class="form-select w-auto text-center fw-bold shadow-sm border-primary">
@@ -312,6 +320,10 @@
                 <button class="nav-link fw-bold fs-5 px-4 border" id="tpex-tab" data-bs-toggle="tab"
                     data-bs-target="#tpex" type="button" role="tab" aria-selected="false">上櫃</button>
             </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold fs-5 px-4 border" id="stat-tab" data-bs-toggle="tab"
+                    data-bs-target="#stat" type="button" role="tab" aria-selected="false">統計</button>
+            </li>
         </ul>
 
         <div class="tab-content" id="marketTabsContent">
@@ -339,6 +351,14 @@
                     </div>
                 </div>
                 <div class="table-wrapper" id="tpex-content" style="display: none;"></div>
+            </div>
+
+            <div class="tab-pane fade" id="stat" role="tabpanel">
+                <div class="text-center p-5" id="stat-loading">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <h4 class="mt-3 text-secondary" id="stat-loading-text">正在努力載入資料...</h4>
+                </div>
+                <div class="table-wrapper" id="stat-content" style="display: none;"></div>
             </div>
         </div>
 
@@ -388,7 +408,11 @@
         style="position: fixed; bottom: 30px; right: 30px; display: none; z-index: 1050; width: 50px; height: 50px; font-size: 20px; outline: none; border: none; align-items: center; justify-content: center;">⬆️</button>
 
     <script>
+        // Global state
+        let availableDates = { daily: [], weekly: [] };
+        let currentPeriod = 'day';
         let currentReportData = null;
+        window.hasAutoFetched = false;
 
         document.addEventListener('DOMContentLoaded', () => {
             loadAvailableDates();
@@ -403,6 +427,11 @@
             });
             backToTopBtn.addEventListener('click', () => {
                 window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+
+            document.getElementById('periodSelect').addEventListener('change', (e) => {
+                currentPeriod = e.target.value;
+                updateDateDropdown();
             });
 
             document.getElementById('dateSelect').addEventListener('change', (e) => {
@@ -431,7 +460,7 @@
             document.getElementById('downloadBtn').addEventListener('click', () => {
                 const currentDate = document.getElementById('dateSelect').value;
                 if (currentDate) {
-                    window.location.href = `/download/${currentDate}`;
+                    window.location.href = `/download/${currentDate}?period=${currentPeriod}`;
                 } else {
                     alert('請先選擇日期');
                 }
@@ -491,7 +520,7 @@
                     const res = await fetch('/trigger_analysis', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ date: targetDate })
+                        body: JSON.stringify({ date: targetDate, period: currentPeriod })
                     });
                     const result = await res.json();
 
@@ -531,51 +560,56 @@
             try {
                 const res = await fetch('/get_available_dates');
                 const data = await res.json();
-
-                const select = document.getElementById('dateSelect');
-                select.innerHTML = '';
-
-                if (data.dates && data.dates.length > 0) {
-                    data.dates.forEach(date => {
-                        const formatted = `${date.substring(0, 4)}/${date.substring(4, 6)}/${date.substring(6, 8)}`;
-                        const option = document.createElement('option');
-                        option.value = date;
-                        option.textContent = formatted;
-                        select.appendChild(option);
-                    });
-
-                    const expectedStrYYYYMMDD = document.getElementById('fetchDateInput').value.replace(/-/g, '');
-
-                    // Auto fetch logic if expected date not found
-                    if (!data.dates.includes(expectedStrYYYYMMDD) && !window.hasAutoFetched) {
-                        window.hasAutoFetched = true;
-                        console.log("Expected report not found. Auto-fetching...");
-                        document.getElementById('fetchDataBtn').click();
-                    } else {
-                        // Load expected date if found, otherwise latest available
-                        const dateToLoad = data.dates.includes(expectedStrYYYYMMDD) ? expectedStrYYYYMMDD : data.dates[0];
-                        select.value = dateToLoad;
-                        loadReport(dateToLoad);
-                    }
-                } else {
-                    select.innerHTML = '<option value="">無可用報表</option>';
-                    if (!window.hasAutoFetched) {
-                        window.hasAutoFetched = true;
-                        document.getElementById('fetchDataBtn').click();
-                    } else {
-                        showError('未找到任何報表檔案。請確定有先執行 analyze.py 產出檔案。');
-                    }
-                }
+                availableDates = data;
+                updateDateDropdown();
             } catch (error) {
                 console.error('Error fetching dates:', error);
                 showError('無法載入日期列表');
             }
         }
 
+        function updateDateDropdown() {
+            const select = document.getElementById('dateSelect');
+            select.innerHTML = '';
+
+            const dates = currentPeriod === 'week' ? availableDates.weekly : availableDates.daily;
+
+            if (dates && dates.length > 0) {
+                dates.forEach(date => {
+                    const formatted = `${date.substring(0, 4)}/${date.substring(4, 6)}/${date.substring(6, 8)}`;
+                    const option = document.createElement('option');
+                    option.value = date;
+                    option.textContent = formatted;
+                    select.appendChild(option);
+                });
+
+                const expectedStrYYYYMMDD = document.getElementById('fetchDateInput').value.replace(/-/g, '');
+
+                // Auto fetch logic
+                if (currentPeriod === 'day' && !dates.includes(expectedStrYYYYMMDD) && !window.hasAutoFetched) {
+                    window.hasAutoFetched = true;
+                    console.log("Expected report not found. Auto-fetching...");
+                    document.getElementById('fetchDataBtn').click();
+                } else {
+                    const dateToLoad = dates.includes(expectedStrYYYYMMDD) ? expectedStrYYYYMMDD : dates[0];
+                    select.value = dateToLoad;
+                    loadReport(dateToLoad);
+                }
+            } else {
+                select.innerHTML = '<option value="">無可用報表</option>';
+                if (currentPeriod === 'day' && !window.hasAutoFetched) {
+                    window.hasAutoFetched = true;
+                    document.getElementById('fetchDataBtn').click();
+                } else {
+                    showError('未找到任何報表檔案。請確定有先執行 analyze.py 產出檔案。');
+                }
+            }
+        }
+
         async function loadReport(dateStr) {
             showLoading(true);
             try {
-                const res = await fetch(`/get_report/${dateStr}`);
+                const res = await fetch(`/get_report/${dateStr}?period=${currentPeriod}`);
                 if (!res.ok) throw new Error('報表讀取失敗');
                 const data = await res.json();
 
@@ -598,23 +632,33 @@
             const limitMode = document.getElementById('limitSelect').value;
             renderTable('twse-content', currentReportData['上市'], sortMode, limitMode);
             renderTable('tpex-content', currentReportData['上櫃'], sortMode, limitMode);
+            if (currentReportData['統計']) {
+                renderTable('stat-content', currentReportData['統計'], sortMode, limitMode);
+            }
         }
 
         function showLoading(isLoading, percent = null, text = "正在努力載入資料...") {
-            document.getElementById('twse-loading').style.display = isLoading ? 'block' : 'none';
-            document.getElementById('twse-content').style.display = isLoading ? 'none' : 'block';
-            document.getElementById('tpex-loading').style.display = isLoading ? 'block' : 'none';
-            document.getElementById('tpex-content').style.display = isLoading ? 'none' : 'block';
+            const tabs = ['twse', 'tpex', 'stat'];
+            tabs.forEach(id => {
+                const loader = document.getElementById(id + '-loading');
+                const content = document.getElementById(id + '-content');
+                if (loader) loader.style.display = isLoading ? 'block' : 'none';
+                if (content) content.style.display = isLoading ? 'none' : 'block';
+            });
 
             if (isLoading) {
-                document.getElementById('twse-loading-text').textContent = text;
-                document.getElementById('tpex-loading-text').textContent = text;
+                tabs.forEach(id => {
+                    const txt = document.getElementById(id + '-loading-text');
+                    if (txt) txt.textContent = text;
+                });
 
                 if (percent !== null) {
-                    document.getElementById('twse-progress-container').style.display = 'block';
-                    document.getElementById('twse-progress-bar').style.width = percent + '%';
-                    document.getElementById('tpex-progress-container').style.display = 'block';
-                    document.getElementById('tpex-progress-bar').style.width = percent + '%';
+                    ['twse', 'tpex'].forEach(id => {
+                        const container = document.getElementById(id + '-progress-container');
+                        const bar = document.getElementById(id + '-progress-bar');
+                        if (container) container.style.display = 'block';
+                        if (bar) bar.style.width = percent + '%';
+                    });
                 } else {
                     document.getElementById('twse-progress-container').style.display = 'none';
                     document.getElementById('tpex-progress-container').style.display = 'none';
@@ -760,11 +804,23 @@
 
             // Main Headers
             html += '<thead><tr>';
-            html += `<th colspan="8" class="fs-5 shadow-sm th-buy main-th">外資買超</th><th class="border-0 bg-transparent"></th>`;
-            html += `<th colspan="8" class="fs-5 shadow-sm th-sell main-th">外資賣超</th><th class="border-0 bg-transparent"></th>`;
-            html += `<th colspan="8" class="fs-5 shadow-sm th-buy main-th">投信買超</th><th class="border-0 bg-transparent"></th>`;
-            html += `<th colspan="8" class="fs-5 shadow-sm th-sell main-th">投信賣超</th>`;
+            const h1 = sheetData.main_headers[0] || '買超';
+            const h2 = sheetData.main_headers[8] || '賣超';
+            const h3 = sheetData.main_headers[16] || '買超';
+            const h4 = sheetData.main_headers[24] || '賣超';
+
+            const isStat = containerId === 'stat-content';
+            const headerClass = isStat ? 'bg-primary text-white' : '';
+
+            html += `<th colspan="8" class="fs-5 shadow-sm th-buy main-th ${headerClass}">${h1}</th><th class="border-0 bg-transparent"></th>`;
+            html += `<th colspan="8" class="fs-5 shadow-sm th-sell main-th ${headerClass}">${h2}</th><th class="border-0 bg-transparent"></th>`;
+            html += `<th colspan="8" class="fs-5 shadow-sm th-buy main-th ${headerClass}">${h3}</th><th class="border-0 bg-transparent"></th>`;
+            html += `<th colspan="8" class="fs-5 shadow-sm th-sell main-th ${headerClass}">${h4}</th>`;
             html += '</tr><tr class="sub-header">';
+
+            const lotsLabel = currentPeriod === 'week' ? '週累計張數' : '張數';
+            const vwapLabel = currentPeriod === 'week' ? '週均價' : '均價';
+            const changeLabel = currentPeriod === 'week' ? '週漲跌' : '收盤%';
 
             // Sub Headers
             for (let i = 0; i < 4; i++) {
@@ -772,10 +828,10 @@
                     <th style="min-width:35px;">排名</th>
                     <th style="min-width:55px;">代號</th>
                     <th style="min-width:90px;">名稱</th>
-                    <th style="min-width:65px;">收盤價</th>
-                    <th style="min-width:65px;">收盤%</th>
-                    <th style="min-width:65px;" class="col-extra">均價</th>
-                    <th style="min-width:60px;" class="col-extra">張數</th>
+                    <th style="min-width:65px;" class="col-extra">收盤價</th>
+                    <th style="min-width:65px;" class="col-extra">${changeLabel}</th>
+                    <th style="min-width:65px;" class="col-extra">${vwapLabel}</th>
+                    <th style="min-width:60px;" class="col-extra">${lotsLabel}</th>
                     <th style="min-width:85px;" class="col-extra">估價(M)</th>
                 `;
                 if (i < 3) html += '<th class="border-0 bg-transparent px-1"></th>';
@@ -797,15 +853,11 @@
                     const lots = row[startIndex + 5];
                     const val = row[startIndex + 6];
 
-                    if (code === '') {
-                        return `<td></td><td></td><td></td><td></td><td></td><td class="col-extra"></td><td class="col-extra"></td><td class="col-extra"></td>`;
-                    }
-
-                    const fillClass = getFillClass(code, isForeign);
+                    const fillClass = code !== '' ? getFillClass(code, isForeign) : '';
 
                     // Determine change_pct style
                     let changeClass = '';
-                    if (typeof change_pct === 'number') {
+                    if (typeof change_pct === 'number' && code !== '') {
                         if (change_pct >= 9.5) changeClass = 'bg-danger text-white fw-bold';
                         else if (change_pct <= -9.5) changeClass = 'bg-success text-white fw-bold';
                         else if (change_pct > 0) changeClass = 'text-danger fw-bold';
@@ -815,12 +867,12 @@
                     return `
                         <td class="text-center text-secondary font-monospace fw-bold">${rank}</td>
                         <td class="text-center font-monospace">${code}</td>
-                        <td class="text-center fw-bold stock-clickable ${fillClass}" data-code="${code}" onclick="scrollToStock('${code}', this)" onmouseover="highlightStock('${code}')" onmouseout="removeHighlightStock('${code}')" title="點擊跳轉到另一個買賣超區域">${name}</td>
-                        <td class="stock-data-${code} font-monospace">${formatNumber(price, 2)}</td>
-                        <td class="stock-data-${code} text-center ${changeClass}">${formatNumber(change_pct, 2)}%</td>
-                        <td class="stock-data-${code} col-extra text-muted small">${formatNumber(vwap, 1)}</td>
-                        <td class="stock-data-${code} col-extra font-monospace">${formatNumber(lots)}</td>
-                        <td class="fw-bold stock-data-${code} col-extra">${formatNumber(val, 2)}</td>
+                        <td class="text-center fw-bold ${code !== '' ? 'stock-clickable' : ''} ${fillClass}" data-code="${code}" ${code !== '' ? `onclick="scrollToStock('${code}', this)" onmouseover="highlightStock('${code}')" onmouseout="removeHighlightStock('${code}')"` : ''} title="${code !== '' ? '點擊跳轉到另一個買賣超區域' : ''}">${name}</td>
+                        <td class="stock-data-${code} col-extra font-monospace">${code !== '' ? formatNumber(price, 2) : ''}</td>
+                        <td class="stock-data-${code} col-extra text-center ${changeClass}">${code !== '' ? formatNumber(change_pct, 2) + '%' : ''}</td>
+                        <td class="stock-data-${code} col-extra text-muted small">${code !== '' ? formatNumber(vwap, 1) : ''}</td>
+                        <td class="stock-data-${code} col-extra font-monospace">${code !== '' ? formatNumber(lots) : ''}</td>
+                        <td class="fw-bold stock-data-${code} col-extra">${code !== '' ? formatNumber(val, 2) : ''}</td>
                     `;
                 };
 
